@@ -1,0 +1,73 @@
+/* 深色美术馆艺术风格主题 */
+:root {
+  --primary-color: #2c3e50;
+  --secondary-color: #34495e;
+  --accent-color: #e74c3c;
+  --text-color: #ecf0f1;
+  --bg-color: #1a1a1a;
+  --card-bg: #2d2d2d;
+  --border-color: #444;
+}
+
+/* 全局样式 */
+.stApp {
+  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+  color: var(--text-color);
+}
+
+/* 侧边栏样式 */
+[data-testid="stSidebar"] {
+  background-color: var(--card-bg);
+  border-right: 2px solid var(--border-color);
+}
+
+/* 标题样式 */
+h1, h2, h3 {
+  color: var(--text-color);
+  font-weight: 300;
+  letter-spacing: 1px;
+}
+
+/* 指标卡片 */
+[data-testid="stMetricValue"] {
+  color: var(--accent-color);
+  font-size: 2rem;
+  font-weight: bold;
+}
+
+/* 按钮样式 */
+.stButton > button {
+  background-color: var(--secondary-color);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  transition: all 0.3s;
+}
+
+.stButton > button:hover {
+  background-color: var(--accent-color);
+  transform: translateY(-2px);
+}
+
+/* 滑块样式 */
+.stSlider > div > div {
+  background-color: var(--card-bg);
+}
+
+/* 文本输入框 */
+.stTextInput > div > div > input {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+}
+
+/* 警告和错误消息 */
+.stAlert {
+  background-color: var(--card-bg);
+  border-left: 4px solid var(--accent-color);
+}
+
+/* 数据表格 */
+[data-testid="stDataFrame"] {
+  background-color: var(--card-bg);
+}
