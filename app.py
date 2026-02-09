@@ -18,6 +18,7 @@ from database import (
     init_db,
 )
 from log_manager import LogManager
+from pipeline import FullChainPipeline
 from processor import FrameQueue, Processor
 
 # 页面配置
@@ -43,8 +44,9 @@ init_db()
 # 初始化 session state
 if "processor" not in st.session_state:
     st.session_state.processor = None
+    st.session_state.pipeline = None  # 智慧展厅全链路流水线
     st.session_state.frame_queue = FrameQueue()
-    st.session_state.mode = "展示模式"  # 或 "调试模式"
+    st.session_state.mode = "展示模式"  # 或 "调试模式" / "智慧展厅全链路"
     st.session_state.log_manager = LogManager()
 
 
@@ -57,11 +59,16 @@ def run_roi_config(video_path: str, config_path: str = "config.json"):
 
 
 def main():
-    st.title("🎨 Museum-Flow-AI 美术馆人流检测与可视化工具")
+    st.title("🎨 智慧展厅全链路行为感知系统")
 
     # 侧边栏：模式选择和基础配置
     st.sidebar.header("⚙️ 系统设置")
-    mode = st.sidebar.radio("运行模式", ["展示模式", "调试模式"], index=0)
+    mode = st.sidebar.radio(
+        "运行模式",
+        ["展示模式", "调试模式", "智慧展厅全链路"],
+        index=0,
+        help="智慧展厅全链路：Stage1~4 流水线 + Pydantic 校验 + 游客标签",
+    )
 
     st.sidebar.markdown("---")
     st.sidebar.header("📁 基础配置")
@@ -196,50 +203,62 @@ def main():
     start = st.sidebar.button("▶️ 启动检测")
     stop = st.sidebar.button("⏹️ 停止检测")
 
-    if start and st.session_state.processor is None:
+    if start and st.session_state.processor is None and st.session_state.pipeline is None:
         if not os.path.exists(video_path) and not video_path.isdigit():
             st.error("视频路径不存在或摄像头索引非法。")
         else:
-            # 启动新的日志会话
-            st.session_state.log_manager.start_session()
-            
-            if mode == "调试模式":
-                st.session_state.processor = Processor(
+            if mode == "智慧展厅全链路":
+                st.session_state.pipeline = FullChainPipeline(
                     video_path=video_path,
                     frame_queue=st.session_state.frame_queue,
+                    config_path="config.json",
                     model_path=model_path if os.path.exists(model_path) else "yolov8n.pt",
                     confidence=confidence,
                     dbscan_eps=dbscan_eps,
                     dbscan_min_samples=dbscan_min_samples,
-                    min_dwell_time=min_dwell_time,
-                    log_manager=st.session_state.log_manager,
                 )
+                st.session_state.pipeline.start()
+                st.success("智慧展厅全链路已启动（Stage 1~4 + 游客标签）")
             else:
-                st.session_state.processor = Processor(
-                    video_path=video_path,
-                    frame_queue=st.session_state.frame_queue,
-                    model_path=model_path if os.path.exists(model_path) else "yolov8n.pt",
-                    log_manager=st.session_state.log_manager,
-                )
-            st.session_state.processor.start()
-            st.success("检测已启动")
+                # 启动新的日志会话
+                st.session_state.log_manager.start_session()
+                if mode == "调试模式":
+                    st.session_state.processor = Processor(
+                        video_path=video_path,
+                        frame_queue=st.session_state.frame_queue,
+                        model_path=model_path if os.path.exists(model_path) else "yolov8n.pt",
+                        confidence=confidence,
+                        dbscan_eps=dbscan_eps,
+                        dbscan_min_samples=dbscan_min_samples,
+                        min_dwell_time=min_dwell_time,
+                        log_manager=st.session_state.log_manager,
+                    )
+                else:
+                    st.session_state.processor = Processor(
+                        video_path=video_path,
+                        frame_queue=st.session_state.frame_queue,
+                        model_path=model_path if os.path.exists(model_path) else "yolov8n.pt",
+                        log_manager=st.session_state.log_manager,
+                    )
+                st.session_state.processor.start()
+                st.success("检测已启动")
 
-    if stop and st.session_state.processor is not None:
-        st.session_state.processor.stop()
-        # 等待线程结束
-        import time
-        time.sleep(0.5)
-        
-        # 导出日志
-        if st.session_state.log_manager and st.session_state.log_manager.session_data:
-            try:
-                json_path, csv_path = st.session_state.log_manager.export_session()
-                st.success(f"✅ 检测已停止，日志已自动导出！")
-                st.info(f"📁 JSON: `{json_path}`\n\n📁 CSV: `{csv_path}`")
-            except Exception as e:
-                st.warning(f"⚠️ 日志导出失败: {e}")
-        
-        st.session_state.processor = None
+    if stop and (st.session_state.processor is not None or st.session_state.pipeline is not None):
+        if st.session_state.pipeline is not None:
+            st.session_state.pipeline.stop()
+            st.session_state.pipeline = None
+        if st.session_state.processor is not None:
+            st.session_state.processor.stop()
+            import time
+            time.sleep(0.5)
+            if st.session_state.log_manager and st.session_state.log_manager.session_data:
+                try:
+                    json_path, csv_path = st.session_state.log_manager.export_session()
+                    st.success(f"✅ 检测已停止，日志已自动导出！")
+                    st.info(f"📁 JSON: `{json_path}`\n\n📁 CSV: `{csv_path}`")
+                except Exception as e:
+                    st.warning(f"⚠️ 日志导出失败: {e}")
+            st.session_state.processor = None
         st.info("检测已停止")
 
     # 主循环：不断从队列拿最新帧并渲染
@@ -265,6 +284,11 @@ def main():
         for roi_id, cnt in roi_counts.items():
             avg_dwell = roi_avg_dwell.get(roi_id, 0.0)
             lines.append(f"**区域 {roi_id}**: {cnt} 人 | 平均停留: {avg_dwell:.1f}秒")
+        visitor_labels = latest_info.get("visitor_labels", {})
+        if visitor_labels:
+            lines.append("**游客标签 (Stage 4)**")
+            for tid, label in list(visitor_labels.items())[:10]:
+                lines.append(f"- ID {tid}: {label}")
         if lines:
             roi_text_placeholder.markdown("  \n".join(lines))
         else:

@@ -5,3 +5,5 @@ numpy
 scikit-learn
 pandas
 plotly
+pydantic
+shapely

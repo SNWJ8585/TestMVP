@@ -1,29 +1,47 @@
-# Museum-Flow-AI 美术馆人流导览工具（增强版）
+# 智慧展厅全链路行为感知系统
 
-本项目基于需求文档，实现了一个功能完整的**美术馆人流检测与可视化**工具，包括：
+本项目基于 PRD/Tech Spec 需求文档，实现**四阶段全链路**：环境建模 → 感知计算 → 逻辑判定 → 数据资产标签化，并通过 Pydantic 校验与 CentralDataHub 分阶段存储。
 
-- **ROI 区域定义**：在视频第一帧上用鼠标拖拽矩形框出展区，保存到 `config.json`。
-- **追踪与统计引擎**：基于 YOLOv8 + ByteTrack 进行行人检测与追踪，计算朝向、停留时间，并用 DBSCAN 做聚集分析。
-- **SQLite 存储**：实时存 `raw_events`（含 timestamp 和 frame_id），停留记录存 `stay_records`，并提供按日聚合到 `daily_stats` 的接口。
-- **双模式界面**：
-  - **调试模式**：可实时调整 YOLO 置信度、DBSCAN 参数（eps/MinPts）、最小停留时间阈值
-  - **展示模式**：数据看板、异常报警、热力图、历史回放
-- **深色艺术主题**：符合美术馆数据大屏的视觉风格
+## 系统架构（四阶段）
+
+| 阶段 | 核心任务 | 主要模块 |
+|------|----------|----------|
+| **Stage 1** | 环境建模：比例尺、单应性、展品 2D/3D | `env_engine.py`、`models/hub.py` (ModelingDataset) |
+| **Stage 2** | 感知计算：人体位置、追踪、世界坐标、DBSCAN | `perception_engine.py`、YOLOv8+ByteTrack |
+| **Stage 3** | 逻辑判定：视线、停留时长、兴趣类型 | `logic_engine.py`（Shapely 射线-多边形）、滑动窗口 |
+| **Stage 4** | 标签化：游客属性（资深爱好者/走马观花者等） | `stage4_tags.py`、CentralDataHub.stage4_assets |
+
+- **数据校验**：Pydantic 定义 `ModelingDataset`、`PerceptionData`、`BehaviorMetrics`、`VisitorProfile`。
+- **独立存储**：`CentralDataHub` 分桶存储；Stage 3 通过 `hub.get_history(track_id, window=30)` 查询 Stage 2 历史。
+- **TraceID**：每阶段输入输出记录 trace_id，支持全链路查找。
+
+## 运行模式
+
+- **展示模式 / 调试模式**：经典人流统计（ROI 人数、停留、DBSCAN、日志导出）。
+- **智慧展厅全链路**：启用 Stage 1～4 流水线，实时输出游客标签与行为指标。
 
 ## 目录结构
 
 ```text
-museum_tool/
-├── app.py              # Streamlit 界面入口（包含调试页与展示页）
-├── processor.py        # 引擎：核心算法、多线程视频流处理、公式计算
-├── config_manager.py   # ROI 画框工具（生成/读取 config.json）
-├── database.py         # 存储明细与聚合数据
-├── components/         # 存放 UI 自定义组件
-├── assets/             # 存放精美 CSS 或图标
-│   └── style.css       # 深色主题样式
-├── config.json         # 存储手动画框的坐标数据
-├── requirements.txt    # 依赖列表
-└── README.md
+TestMVP/
+├── app.py              # Streamlit 入口（三种运行模式）
+├── pipeline.py         # 全链路流水线（Stage 1→2→3→4）
+├── env_engine.py       # Stage 1：透视矫正、比例尺、展品 2D
+├── perception_engine.py # Stage 2：YOLO+ByteTrack、世界坐标、DBSCAN
+├── logic_engine.py     # Stage 3：视线判定、停留时长、兴趣类型
+├── stage4_tags.py      # Stage 4：游客标签
+├── models/
+│   ├── __init__.py
+│   └── hub.py          # Pydantic 模型 + CentralDataHub
+├── processor.py        # 经典检测线程（展示/调试模式）
+├── config_manager.py   # ROI 画框（config.json）
+├── database.py         # SQLite 存储
+├── log_manager.py      # 会话日志 JSON/CSV
+├── components/         # UI 组件
+├── assets/style.css    # 深色主题
+├── config.json         # ROI/展品区域
+├── logs/               # 检测会话日志
+└── requirements.txt
 ```
 
 ## 环境准备
