@@ -30,6 +30,7 @@ class FullChainPipeline(threading.Thread):
         confidence: float = 0.25,
         dbscan_eps: float = 50.0,
         dbscan_min_samples: int = 3,
+        tag_rules: Optional[dict] = None,
     ):
         super().__init__(daemon=True)
         self.video_path = video_path
@@ -48,6 +49,14 @@ class FullChainPipeline(threading.Thread):
         self.logic = LogicEngine(self.hub, dwell_window_seconds=30.0)
         self.perception.env = self.env
         self.perception.rois = self.rois
+        self.tag_rules = tag_rules or {
+            "expert_min_dwell": 60,
+            "expert_max_focus": 15,
+            "normal_min_dwell": 20,
+            "normal_max_focus": 30,
+            "brief_min_dwell": 5,
+            "casual_max_dwell": 3
+        }
 
     def _load_rois(self, config_path: str) -> None:
         import json
@@ -113,7 +122,7 @@ class FullChainPipeline(threading.Thread):
                     last.trace_id,
                 )
                 self.hub.set_logic(track_id, metrics, last.trace_id)
-            update_all_profiles(self.hub)
+            update_all_profiles(self.hub, self.tag_rules)
             info["visitor_labels"] = {tid: p.label for tid, p in self.hub.stage4_assets.items()}
             try:
                 self.frame_queue.put(vis, info)

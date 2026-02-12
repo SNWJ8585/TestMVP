@@ -89,6 +89,7 @@ class Processor(threading.Thread):
     dbscan_min_samples: int = 3,
     min_dwell_time: float = 0.0,
     log_manager: Optional[LogManager] = None,
+    tag_rules: Optional[dict] = None,
   ):
     super().__init__(daemon=True)
     self.video_path = video_path
@@ -105,6 +106,14 @@ class Processor(threading.Thread):
     self.current_frame_id = 0
     self.log_manager = log_manager
     self.fps = 25.0  # 默认 FPS，会在 run() 中更新
+    self.tag_rules = tag_rules or {
+      "expert_min_dwell": 60,
+      "expert_max_focus": 15,
+      "normal_min_dwell": 20,
+      "normal_max_focus": 30,
+      "brief_min_dwell": 5,
+      "casual_max_dwell": 3
+    }
 
   def stop(self):
     self._stop_event.set()

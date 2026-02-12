@@ -20,6 +20,7 @@ from database import (
 from log_manager import LogManager
 from pipeline import FullChainPipeline
 from processor import FrameQueue, Processor
+from stage4_tags import update_thresholds_from_ui, rule_engine
 
 # 页面配置
 st.set_page_config(
@@ -100,6 +101,176 @@ def main():
         dbscan_min_samples = 3
         min_dwell_time = 0.0
 
+    # ========== Stage 4: 游客标签规则编辑器 ==========
+    st.sidebar.markdown("---")
+    st.sidebar.header("Stage 4: 游客标签规则")
+
+    # ===== 规则1：资深爱好者 =====
+    with st.sidebar.expander("资深爱好者判定规则", expanded=True):
+        st.sidebar.caption("条件：长时间停留 + 高度专注")
+
+        col1, col2 = st.sidebar.columns(2)
+        with col1:
+            expert_min_dwell = st.slider(
+                "最短停留时间（秒）",
+                min_value=30, max_value=300, value=60, step=5,
+                key="expert_dwell",
+                help="停留时间超过这个阈值的游客才可能被标记为资深爱好者"
+            )
+        with col2:
+            expert_max_focus = st.slider(
+                "最大视线偏离值",
+                min_value=5, max_value=30, value=15, step=5,
+                key="expert_focus",
+                help="视线偏离值小于这个数值才算专注观看（数值越小越专注）"
+            )
+
+        st.sidebar.info(
+            f"当前规则：停留 ≥ {expert_min_dwell}秒 且 视线偏离 ≤ {expert_max_focus}"
+        )
+
+    # ===== 规则2：一般观众 =====
+    with st.sidebar.expander("一般观众判定规则", expanded=True):
+        st.sidebar.caption("条件：中等停留时间 + 一般专注")
+
+        col1, col2 = st.sidebar.columns(2)
+        with col1:
+            normal_min_dwell = st.slider(
+                "最短停留时间（秒）",
+                min_value=10, max_value=120, value=20, step=5,
+                key="normal_dwell",
+                help="停留时间超过这个阈值的游客才可能被标记为一般观众"
+            )
+        with col2:
+            normal_max_focus = st.slider(
+                "最大视线偏离值",
+                min_value=10, max_value=50, value=30, step=5,
+                key="normal_focus",
+                help="一般观众的视线要求比资深爱好者宽松"
+            )
+
+        st.sidebar.info(
+            f"当前规则：停留 ≥ {normal_min_dwell}秒 且 视线偏离 ≤ {normal_max_focus}"
+        )
+
+    # ===== 规则3：短暂驻足 =====
+    with st.sidebar.expander("短暂驻足判定规则", expanded=True):
+        st.sidebar.caption("条件：停留时间较短，不看视线")
+
+        brief_min_dwell = st.slider(
+            "最短停留时间（秒）",
+            min_value=3, max_value=30, value=5, step=1,
+            key="brief_dwell",
+            help="停留超过这个时间但不够一般观众标准的，标记为短暂驻足"
+        )
+
+        st.sidebar.info(f"当前规则：停留 ≥ {brief_min_dwell}秒（不看视线）")
+
+    # ===== 规则4：走马观花者 =====
+    with st.sidebar.expander("走马观花者判定规则", expanded=True):
+        st.sidebar.caption("条件：停留时间极短")
+
+        casual_max_dwell = st.slider(
+            "最长停留时间（秒）",
+            min_value=1, max_value=20, value=3, step=1,
+            key="casual_dwell",
+            help="停留时间少于这个阈值的游客，直接标记为走马观花者"
+        )
+
+        st.sidebar.info(f"当前规则：停留 ≤ {casual_max_dwell}秒")
+
+    # ===== 规则预览 =====
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("当前完整规则链")
+
+    # 获取规则摘要
+    rules_summary = rule_engine.get_rule_summary()
+    st.sidebar.markdown(f"""
+       ```
+       资深爱好者: {rules_summary['expert']}
+       一般观众:   {rules_summary['normal']}  
+       短暂驻足:   {rules_summary['brief']}
+       走马观花者: {rules_summary['casual']}
+       ```
+       """)
+
+    # ===== 联动核心：把所有滑块值传给规则引擎 =====
+    update_thresholds_from_ui(
+        expert_dwell=expert_min_dwell,
+        expert_focus=expert_max_focus,
+        normal_dwell=normal_min_dwell,
+        normal_focus=normal_max_focus,
+        brief_dwell=brief_min_dwell,
+        casual_dwell=casual_max_dwell
+    )
+
+    # 显示规则更新时间
+    if rule_engine.last_updated:
+        st.sidebar.caption(f"规则生效: {rule_engine.last_updated.strftime('%H:%M:%S')}")
+
+    # ===== 实时标签测试区 =====
+    st.sidebar.markdown("---")
+    st.sidebar.header("实时标签测试")
+
+    # 创建测试数据
+    import pandas as pd
+    import numpy as np
+
+    # 生成各种类型的游客测试数据
+    test_data = [
+        {"游客ID": "#1", "停留(秒)": 120, "视线偏离": 10, "描述": "深度爱好者"},
+        {"游客ID": "#2", "停留(秒)": 80, "视线偏离": 12, "描述": "爱好者"},
+        {"游客ID": "#3", "停留(秒)": 45, "视线偏离": 18, "描述": "普通观众"},
+        {"游客ID": "#4", "停留(秒)": 30, "视线偏离": 25, "描述": "随便看看"},
+        {"游客ID": "#5", "停留(秒)": 15, "视线偏离": 35, "描述": "路过"},
+        {"游客ID": "#6", "停留(秒)": 8, "视线偏离": 40, "描述": "快步走过"},
+        {"游客ID": "#7", "停留(秒)": 2, "视线偏离": 45, "描述": "匆匆一瞥"},
+    ]
+
+    # 为每个游客生成标签
+    test_results = []
+    for data in test_data:
+        label = rule_engine.generate_label(
+            dwell_time=data["停留(秒)"],
+            focus_index=data["视线偏离"]  # 注意：这里是 focus_index，不是 gaze_angle！
+        )
+        test_results.append({
+            "ID": data["游客ID"],
+            "停留": f"{data['停留(秒)']}s",
+            "视线偏离": f"{data['视线偏离']}",
+            "标签": label
+        })
+
+    # 显示测试结果表格
+    st.sidebar.dataframe(
+        pd.DataFrame(test_results),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    # 统计各类标签数量
+    df_test = pd.DataFrame(test_results)
+    expert_count = len(df_test[df_test["标签"].str.contains("资深爱好者")])
+    normal_count = len(df_test[df_test["标签"].str.contains("一般观众")])
+    brief_count = len(df_test[df_test["标签"].str.contains("短暂驻足")])
+    casual_count = len(df_test[df_test["标签"].str.contains("走马观花者")])
+
+    st.sidebar.markdown(f"""
+       **测试结果统计**
+       - 资深爱好者: {expert_count}人
+       - 一般观众: {normal_count}人  
+       - 短暂驻足: {brief_count}人
+       - 走马观花者: {casual_count}人
+       """)
+
+    # 添加视线偏离值说明
+    st.sidebar.caption("""
+       **ℹ视线偏离值说明**
+       - 0-15: 非常专注
+       - 16-30: 一般专注  
+       - 31+: 分心/随意
+       """)
+    # ========== Stage 4 规则编辑器结束 ==========
     st.sidebar.markdown("---")
     st.sidebar.header("🎮 检测控制")
 
@@ -207,6 +378,16 @@ def main():
         if not os.path.exists(video_path) and not video_path.isdigit():
             st.error("视频路径不存在或摄像头索引非法。")
         else:
+            # ===== 收集当前的标签规则 =====
+            current_tag_rules = {
+                "expert_min_dwell": expert_min_dwell,
+                "expert_max_focus": expert_max_focus,
+                "normal_min_dwell": normal_min_dwell,
+                "normal_max_focus": normal_max_focus,
+                "brief_min_dwell": brief_min_dwell,
+                "casual_max_dwell": casual_max_dwell
+            }
+
             if mode == "智慧展厅全链路":
                 st.session_state.pipeline = FullChainPipeline(
                     video_path=video_path,
@@ -216,9 +397,11 @@ def main():
                     confidence=confidence,
                     dbscan_eps=dbscan_eps,
                     dbscan_min_samples=dbscan_min_samples,
+                    tag_rules=current_tag_rules
                 )
                 st.session_state.pipeline.start()
                 st.success("智慧展厅全链路已启动（Stage 1~4 + 游客标签）")
+                st.info(f"当前标签规则: 资深≥{expert_min_dwell}s/≤{expert_max_focus}°, 一般≥{normal_min_dwell}s/≤{normal_max_focus}°, 驻足≥{brief_min_dwell}s, 走马≤{casual_max_dwell}s")
             else:
                 # 启动新的日志会话
                 st.session_state.log_manager.start_session()
@@ -287,8 +470,36 @@ def main():
         visitor_labels = latest_info.get("visitor_labels", {})
         if visitor_labels:
             lines.append("**游客标签 (Stage 4)**")
-            for tid, label in list(visitor_labels.items())[:10]:
-                lines.append(f"- ID {tid}: {label}")
+            # 显示当前生效的规则
+            rules_summary = rule_engine.get_rule_summary()
+            lines.append(f"  *当前规则: {rules_summary['expert']}*")
+            # 按标签类型分组显示，更直观
+            expert_ids = []
+            normal_ids = []
+            brief_ids = []
+            casual_ids = []
+            other_ids = []
+            for tid, label in visitor_labels.items():
+                if"资深爱好者" in label:
+                    expert_ids.append(f"ID {tid}")
+                elif "一般观众" in label:
+                    normal_ids.append(f"ID {tid}")
+                elif "短暂驻足" in label:
+                    brief_ids.append(f"ID {tid}")
+                elif "走马观花者" in label:
+                    casual_ids.append(f"ID {tid}")
+                else:
+                    other_ids.append(f"ID {tid}")
+            if expert_ids:
+                lines.append(f"  资深爱好者 ({len(expert_ids)}人): {', '.join(expert_ids[:3])}{'...' if len(expert_ids) > 3 else ''}")
+            if normal_ids:
+                lines.append(f"  一般观众 ({len(normal_ids)}人): {', '.join(normal_ids[:3])}{'...' if len(normal_ids) > 3 else ''}")
+            if brief_ids:
+                lines.append(f"  短暂驻足 ({len(brief_ids)}人): {', '.join(brief_ids[:3])}{'...' if len(brief_ids) > 3 else ''}")
+            if casual_ids:
+                lines.append(f"  走马观花者 ({len(casual_ids)}人): {', '.join(casual_ids[:3])}{'...' if len(casual_ids) > 3 else ''}")
+            if other_ids:
+                lines.append(f"  其他 ({len(other_ids)}人): {', '.join(other_ids[:3])}{'...' if len(other_ids) > 3 else ''}")
         if lines:
             roi_text_placeholder.markdown("  \n".join(lines))
         else:
